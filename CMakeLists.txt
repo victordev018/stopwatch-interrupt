@@ -54,6 +54,8 @@ pico_enable_stdio_usb(stopwatch_with_interrupt 1)
 target_link_libraries(stopwatch_with_interrupt
     pico_stdlib
     hardware_i2c
+    hardware_adc
+    hardware_timer
 )
 
 # Add the standard include files to the build
@@ -61,6 +63,7 @@ target_include_directories(stopwatch_with_interrupt PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/drivers
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/display
+    ${CMAKE_CURRENT_LIST_DIR}/src/utils/joystick
 )
 
 # Add any user requested libraries
