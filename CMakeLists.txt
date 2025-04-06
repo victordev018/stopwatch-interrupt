@@ -64,6 +64,7 @@ target_include_directories(stopwatch_with_interrupt PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/drivers
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/display
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/joystick
+    ${CMAKE_CURRENT_LIST_DIR}/src/utils/buttons
     ${CMAKE_CURRENT_LIST_DIR}/src/utils/menu
 )
 

@@ -11,16 +11,61 @@
 #include "display.h"                    // funções para manipulação do display ssd1306
 #include "menu.h"                       // funções para manipulação do menu
 #include "joystick.h"                   // funções para manupulação do joystick
+#include "button.h"                     // funções para manipulação dos botões
 
+// Enum para servir como máquina de estados para a aplicação
+typedef enum {
+    STATE_MENU,         // menu inicial
+    STATE_EDIT_TIME,    // modo de edição de tempo
+    STATE_RUNNING      // modo de cronômetro rodando
+} AppState;
+
+AppState current_state = STATE_MENU;
 
 // variável de controle para identificar a atual opção do menu selecionada
 int current_option = 0;
+int timer_of_stopwatch = 10;
 
 // Estrutura de timers
 struct repeating_timer timer_joystick;
+struct repeating_timer timer_debouncing;
+struct repeating_timer timer_stopwatch;
 
 // Menu principal da aplicação
 Menu *main_menu = NULL;
+
+// Definindo o tipo do callback genérico para Timer: função que retorna true e não recebe argumentos
+typedef bool (*CallbackTimer)();
+
+/*
+* Função que ativa o joystick para leitura a cada 100ms e executa um callback passado
+*/
+void activate_joystick_reading(CallbackTimer callback) {
+    add_repeating_timer_ms(-100, callback, NULL, &timer_joystick);
+}
+
+/*
+* Função que desativa o joystick para leituras periódicas (100ms)
+*/
+void disable_joystick_reading() {
+    cancel_repeating_timer(&timer_joystick);
+}
+
+/*
+* Callback para poder reativar os botões
+*/
+bool reeneble_button_callback() {
+    button_enable_interrupt();      // ativa novamente o botão
+    return false;                   // retorna falso para a função não ser chamada novamente
+}
+
+/*
+* Função reponsável por tratar o efeito bounce
+*/
+void debouncing() {
+    button_disable_interrupt();     // desativa o botão temporariamente
+    add_repeating_timer_ms(200, reeneble_button_callback, NULL, &timer_debouncing);
+}
 
 /*
 * Callback para navegar no menu
@@ -40,6 +85,81 @@ bool navigate_menu() {
     return true;
 }
 
+bool update_stopwatch_on_display() {
+    static int current_second = -1;
+    
+    // garantindo que o cronômetro sempre use o valor atualizado do delay
+    static int last_delay_time = 5;
+    if (timer_of_stopwatch != last_delay_time){
+        current_second = timer_of_stopwatch;
+        last_delay_time = timer_of_stopwatch;
+    }
+
+    // no primeiro loop, o segundo atual será o tempo configurado para o cronômetro
+    if (current_second == -1) current_second = timer_of_stopwatch;
+
+    // quando o cronômetro zerar
+    if (current_second == 0) {
+        current_second = timer_of_stopwatch;        // zera o segundo atual para tempo configurado
+        current_state = STATE_MENU;                 // altera o estado da aplicação para o estado do MENU
+        draw_menu(main_menu, current_option);       // atualiza o display para exibir o menu
+        activate_joystick_reading(navigate_menu);   // ativa novamente o joystick para navegar no menu
+        return false;                               // retorna falso para o callback não ser mais chamado
+    }
+
+    // escreve cronômetro regressivo no display
+    display_clear();
+    char timer_msg[20];
+    snprintf(timer_msg, sizeof(timer_msg), "Timer: %d", --current_second+1);
+    display_write_text_no_clear(timer_msg, 10, 20, 2, 0);
+    display_show();
+    return true;
+}
+
+/*
+* Função que direciona para a opção selecionada
+*/
+void run_option(int option) {
+
+    // caso seja a opção de iniciar cronômetro
+    if (option == 0) {
+        // altera o estado da aplicação para cronômetro rodando
+        current_state = STATE_RUNNING;
+        // desativa a leitura do joystick temporariamente
+        disable_joystick_reading();
+        // Iniciar cronômetro
+        add_repeating_timer_ms(-1000, update_stopwatch_on_display, NULL, &timer_stopwatch);
+        return;
+    }
+
+    // caso seja a opção de editar tempo do cronômetro
+    if (option == 1) {
+        // TODO: tarefinha de casa para o enzo
+    }
+}
+
+/*
+* Callback para gerenciar as interrupções geradas pelo botão
+*/
+void button_callback(uint pin, uint32_t event) {
+    // caso o cronômetro já esteja rodando, aborta a ação
+    if (current_state == STATE_RUNNING) return;
+
+    // trata o efeito bounce
+    debouncing();
+
+    switch (current_state) {
+        case STATE_MENU:
+            // executa função da opção selecionada
+            run_option(current_option);
+            break;
+        case STATE_EDIT_TIME:
+            // saiu do modo de edição de tempo
+            break;
+    }
+
+}
+
 /*
 * Função que inicializa os dispositivos
 */
@@ -49,9 +169,12 @@ void setup() {
     stdio_init_all();
     // inicializa o display
     display_init();
+    // inicializa o botão B e configura a interrupção
+    button_init();
+    gpio_set_irq_enabled_with_callback(PIN_BTN_B, GPIO_IRQ_EDGE_FALL, true, button_callback);
     // inicializa o joystick e configura interrupção para ler o joystick e atualizar o diplay a cada 100ms
     joystick_init();
-    add_repeating_timer_ms(-100, navigate_menu, NULL, &timer_joystick);
+    activate_joystick_reading(navigate_menu);
 }
 
 int main()
@@ -68,7 +191,6 @@ int main()
     draw_menu(main_menu, current_option);
 
     while (true) {
-        printf("current option: %d\n", current_option);
-        sleep_ms(300);
+        tight_loop_contents();
     }
 }
