@@ -20,7 +20,8 @@ typedef enum {
     STATE_RUNNING       // modo de cronômetro rodando
 } AppState;
 
-AppState current_state = STATE_MENU;
+// Variável de controle para o estado da aplucação
+AppState current_state;
 
 // variável de controle para identificar a atual opção do menu selecionada
 int current_option = 0;
@@ -38,17 +39,20 @@ Menu *main_menu = NULL;
 typedef bool (*CallbackTimer)();
 
 /*
-* Função que ativa o joystick para leitura a cada 100ms e executa um callback passado
-*/
-void activate_joystick_reading(CallbackTimer callback) {
-    add_repeating_timer_ms(-100, callback, NULL, &timer_joystick);
-}
-
-/*
 * Função que desativa o joystick para leituras periódicas (100ms)
 */
 void disable_joystick_reading() {
     cancel_repeating_timer(&timer_joystick);
+}
+
+/*
+* Função que ativa o joystick para leitura a cada 100ms e executa um callback passado
+*/
+void activate_joystick_reading(CallbackTimer callback) {
+    // desativo o timer do joystick que estava rodando, caso tenha
+    disable_joystick_reading();
+    // configuro o novo callback para executar a cada leitura do joystick
+    add_repeating_timer_ms(-100, callback, NULL, &timer_joystick);
 }
 
 /*
@@ -85,6 +89,10 @@ bool navigate_menu() {
     return true;
 }
 
+
+/*
+* Callback que atualiza o cronômetro no display
+*/
 bool update_stopwatch_on_display() {
     static int current_second = -1;
     
@@ -110,10 +118,25 @@ bool update_stopwatch_on_display() {
     // escreve cronômetro regressivo no display
     display_clear();
     char timer_msg[20];
-    snprintf(timer_msg, sizeof(timer_msg), "Timer: %d", --current_second+1);
+    snprintf(timer_msg, sizeof(timer_msg), "Timer: %d", current_second);
     display_write_text_no_clear(timer_msg, 10, 20, 2, 0);
     display_show();
-    return true;
+
+    // decrementando o segundo final
+    --current_second;
+    return true;    // retorna true para o callback continuar sendo executado
+}
+
+/*
+* Função para a opção de iniciar o cronômetro
+*/
+void option_init_stopwatch() {
+    // altera o estado da aplicação para cronômetro rodando
+    current_state = STATE_RUNNING;
+    // desativa a leitura do joystick temporariamente
+    disable_joystick_reading();
+    // Iniciar cronômetro
+    add_repeating_timer_ms(-1000, update_stopwatch_on_display, NULL, &timer_stopwatch);
 }
 
 /*
@@ -144,28 +167,29 @@ bool edit_timer() {
 }
 
 /*
+* Função para aopção de editar o timer do cronômetro
+*/
+void option_edit_timer() {
+    // atualizar o stado da aplicação para STATE_EDIT_TIMER
+    current_state = STATE_EDIT_TIME;
+    // configurar um timer para ajustar o timer do cronômetro
+    activate_joystick_reading(edit_timer);
+}
+
+/*
 * Função que direciona para a opção selecionada
 */
 void run_option(int option) {
 
     // caso seja a opção de iniciar cronômetro
     if (option == 0) {
-        // altera o estado da aplicação para cronômetro rodando
-        current_state = STATE_RUNNING;
-        // desativa a leitura do joystick temporariamente
-        disable_joystick_reading();
-        // Iniciar cronômetro
-        add_repeating_timer_ms(-1000, update_stopwatch_on_display, NULL, &timer_stopwatch);
+        option_init_stopwatch();
         return;
     }
 
     // caso seja a opção de editar tempo do cronômetro
     if (option == 1) {
-        // atualizar o stado da aplicação para STATE_EDIT_TIMER
-        current_state = STATE_EDIT_TIME;
-        // configurar um timer para ajustar o timer do cronômetro
-        disable_joystick_reading();
-        activate_joystick_reading(edit_timer);
+        option_edit_timer();
         return;
     }
 }
@@ -180,20 +204,21 @@ void button_callback(uint pin, uint32_t event) {
     // trata o efeito bounce
     debouncing();
 
-    switch (current_state) {
-        case STATE_MENU:
-            // executa função da opção selecionada'
-            run_option(current_option);
-            break;
-        case STATE_EDIT_TIME:   // saiu do modo de edição de tempo
-            // atualizar o stado da aplicuação para STATE_MENU
-            current_state = STATE_MENU;
-            disable_joystick_reading();
-            activate_joystick_reading(navigate_menu);
-            draw_menu(main_menu, current_option);
-            break;
+    // caso esteja no menu e selecione uma opção
+    if (current_state == STATE_MENU) {
+        // executa função da opção selecionada'
+        run_option(current_option);
+        return;
     }
-
+    
+    // caso esteja no modo de edição do timer e confirme o novo valor
+    if (current_state == STATE_EDIT_TIME) {
+        // atualizar o stado da aplicuação para STATE_MENU
+        current_state = STATE_MENU;
+        activate_joystick_reading(navigate_menu);
+        draw_menu(main_menu, current_option);
+        return;
+    }
 }
 
 /*
@@ -215,15 +240,15 @@ void setup() {
 
 int main()
 {
-    
+    // incializa a comunicação serial e os dispotivos
     setup();
-
+    // instancia o menu principal da aplicação
     main_menu = create_menu();
-
-    // boas vindas e teste do display
+    // configura o estado inicial da aplicação para o estado do MENU
+    current_state = STATE_MENU;
+    // boas vindas no display
     display_write_text("Bem vindo", 35, 25, 1, 1000);
-
-    // exibindo os dados
+    // desenhando o menu no display
     draw_menu(main_menu, current_option);
 
     while (true) {
