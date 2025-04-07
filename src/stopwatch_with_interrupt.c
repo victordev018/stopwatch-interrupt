@@ -17,7 +17,7 @@
 typedef enum {
     STATE_MENU,         // menu inicial
     STATE_EDIT_TIME,    // modo de edição de tempo
-    STATE_RUNNING      // modo de cronômetro rodando
+    STATE_RUNNING       // modo de cronômetro rodando
 } AppState;
 
 AppState current_state = STATE_MENU;
@@ -117,6 +117,33 @@ bool update_stopwatch_on_display() {
 }
 
 /*
+* Callback reposnável por fazer a edição do timer
+*/
+bool edit_timer() {
+    // caso tenha confirmado o novo valor do timer
+    if (current_state == STATE_MENU) return false;
+
+    // obtendo o estado do joystick
+    JoystickState joy_state = joystick_get_state();
+
+    // atualizando o valor do timer entre (1-60) segundos
+    if (joy_state == JOY_UP && timer_of_stopwatch < 60) {
+        timer_of_stopwatch++;
+    } else if (joy_state == JOY_DOWN && timer_of_stopwatch > 1) {
+        timer_of_stopwatch--;
+    }
+
+    // escrevendo no display valor atual do timer
+    display_clear();
+    char current_timer_msg[20];
+    snprintf(current_timer_msg, sizeof(current_timer_msg), "Atual: %d", timer_of_stopwatch);
+    display_write_text_no_clear(current_timer_msg, 10, 15, 2, 0);
+    display_write_text_no_clear("Min: 1  Max: 60", 20, 50, 1, 0);
+    display_show();
+    return true;
+}
+
+/*
 * Função que direciona para a opção selecionada
 */
 void run_option(int option) {
@@ -134,7 +161,12 @@ void run_option(int option) {
 
     // caso seja a opção de editar tempo do cronômetro
     if (option == 1) {
-        // TODO: tarefinha de casa para o enzo
+        // atualizar o stado da aplicação para STATE_EDIT_TIMER
+        current_state = STATE_EDIT_TIME;
+        // configurar um timer para ajustar o timer do cronômetro
+        disable_joystick_reading();
+        activate_joystick_reading(edit_timer);
+        return;
     }
 }
 
@@ -150,11 +182,15 @@ void button_callback(uint pin, uint32_t event) {
 
     switch (current_state) {
         case STATE_MENU:
-            // executa função da opção selecionada
+            // executa função da opção selecionada'
             run_option(current_option);
             break;
-        case STATE_EDIT_TIME:
-            // saiu do modo de edição de tempo
+        case STATE_EDIT_TIME:   // saiu do modo de edição de tempo
+            // atualizar o stado da aplicuação para STATE_MENU
+            current_state = STATE_MENU;
+            disable_joystick_reading();
+            activate_joystick_reading(navigate_menu);
+            draw_menu(main_menu, current_option);
             break;
     }
 
@@ -185,7 +221,7 @@ int main()
     main_menu = create_menu();
 
     // boas vindas e teste do display
-    display_write_text("Bem vindo", 10, 10, 1, 2000);
+    display_write_text("Bem vindo", 35, 25, 1, 1000);
 
     // exibindo os dados
     draw_menu(main_menu, current_option);
